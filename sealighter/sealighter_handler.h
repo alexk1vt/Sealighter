@@ -70,7 +70,8 @@ enum Output_format
 {
     output_stdout,
     output_event_log,
-    output_file
+    output_file,
+    output_rpc
 };
 
 /*
@@ -94,6 +95,19 @@ int setup_logger_file
     Close stream to output file
 */
 void teardown_logger_file();
+
+/*
+    Create stream to write to rpc
+*/
+int setup_logger_rpc
+{
+    std::string rpc_target
+};
+
+/*
+     Close stream to rpc
+*/
+void teardown_logger_rpc();
 
 /*
     Stores the global output format

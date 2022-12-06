@@ -107,6 +107,20 @@ void threaded_write_file_ln
     g_print_mutex.unlock();
 }
 
+/*
+    Print a line to an output rpc, using a mutex
+    to ensure we print each event wholey before
+    another can
+*/
+void threaded_write_rpc_ln
+(
+    std::string event_string
+)
+{
+    g_print_mutex.lock();
+    //line to do the actual write to rpc
+    g_print_mutex.unlock();
+}
 
 /*
     Convert an ETW Event to JSON
@@ -442,6 +456,18 @@ void teardown_logger_file()
     }
 }
 
+int setup_logger_rpc
+(
+    std::string rpc_target
+)
+{
+    return;  //TODO:  Imeplement initialization function!
+}
+
+void teardown_logger_rpc()
+{
+    return;  //TODO:  Implement teardown function!
+}
 
 void set_output_format(Output_format format)
 {

@@ -839,6 +839,16 @@ int parse_config
                         status = setup_logger_file(json_props["output_filename"].get<std::string>());
                     }
                 }
+                else if ("rpc" == format) {
+                    if (json_props["rpc_target"].is_null()) {
+                        log_messageA("When output_format == 'rpc', also set 'rpc_target'\n");
+                        status = SEALIGHTER_ERROR_OUTPUT_FILE; //TODO:  MAKE ERROR FOR RPC_TARGET
+                    }
+                    else {
+                        set_output_format(Output_format::output_rpc);
+                        status = setup_logger_rpc(json_props["rpc_target"].get<std::string>());  //TODO:  MAKE INITIATIZATION FUNCTION TO SET UP RPC !!
+                    }
+                }
                 else {
                     log_messageA("Invalid output_format\n");
                     status = SEALIGHTER_ERROR_OUTPUT_FORMAT;
