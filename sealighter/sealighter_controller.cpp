@@ -846,7 +846,7 @@ int parse_config
                     }
                     else {
                         set_output_format(Output_format::output_rpc);
-                        status = setup_logger_rpc(json_props["rpc_target"].get<std::string>());  //TODO:  MAKE INITIATIZATION FUNCTION TO SET UP RPC !!
+                        setup_logger_rpc(json_props["rpc_target"].get<std::string>());
                     }
                 }
                 else {

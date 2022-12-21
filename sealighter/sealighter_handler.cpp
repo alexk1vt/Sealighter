@@ -8,6 +8,10 @@
 #include <mutex>
 #include <atomic>
 
+
+
+
+
 // -------------------------
 // GLOBALS - START
 // -------------------------
@@ -30,6 +34,9 @@ static std::mutex g_buffer_lists_mutex;
 static std::thread g_buffer_list_thread;
 static std::atomic_bool g_buffer_thread_stop = false;
 static std::condition_variable g_buffer_list_con_var;
+
+//for gRPC
+SenderClient* Sender;
 
 // -------------------------
 // GLOBALS - END
@@ -108,18 +115,15 @@ void threaded_write_file_ln
 }
 
 /*
-    Print a line to an output rpc, using a mutex
-    to ensure we print each event wholey before
-    another can
+    Print a line to an output rpc
 */
-void threaded_write_rpc_ln
+void write_rpc_ln
 (
     std::string event_string
 )
 {
-    g_print_mutex.lock();
     //line to do the actual write to rpc
-    g_print_mutex.unlock();
+    Sender->SendString(event_string);
 }
 
 /*
@@ -333,9 +337,9 @@ void output_json_event
     json json_event
 )
 {
-    // If writing to a file, don't pretty print
+    // If writing to a file or RPC, don't pretty print
     // This makes it 1 line per event
-    bool pretty_print = (Output_format::output_file != g_output_format);
+    bool pretty_print = (Output_format::output_file != g_output_format) && (Output_format::output_rpc != g_output_format);
     std::string event_string = convert_json_string(json_event, pretty_print);
     std::string trace_name = json_event["header"]["trace_name"];
 
@@ -351,6 +355,9 @@ void output_json_event
             break;
         case output_file:
             threaded_write_file_ln(event_string);
+            break;
+        case output_rpc:
+            write_rpc_ln(event_string);
             break;
         }
     }
@@ -456,17 +463,28 @@ void teardown_logger_file()
     }
 }
 
-int setup_logger_rpc
+// Receives string containing config to access server channel.  Ex:
+// to reach localhost at port 50051, string is ""localhost:50051"
+void setup_logger_rpc
 (
     std::string rpc_target
 )
 {
-    return;  //TODO:  Imeplement initialization function!
+    Sender = new SenderClient(grpc::CreateChannel(rpc_target.c_str(),
+        grpc::InsecureChannelCredentials()));
+
+    // Spawn reader thread that loops indefinitely
+    Sender->setThreadStatus(true);
+    Sender->thread_ = std::thread(&SenderClient::AsyncCompleteRpc, &Sender); //I BELIVE THE ERROR IS THE REFERENCE TO THE SECOND PARAMETER -- WHAT SHOULD SENDER BE
+
+    return;
 }
 
 void teardown_logger_rpc()
 {
-    return;  //TODO:  Implement teardown function!
+    Sender->setThreadStatus(false); // notifies gRPC thread to terminate
+    Sender->thread_.join(); // waits for child thread to terminate
+    return;
 }
 
 void set_output_format(Output_format format)

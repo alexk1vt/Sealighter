@@ -67,6 +67,7 @@
     <None Include="..\example_config.json">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="sealighter_provider.rc">
