@@ -199,7 +199,8 @@ public:
             GPR_ASSERT(ok);
 
             if (call->status.ok())
-                std::cout << "Server responded: " << call->reply.message() << std::endl;
+                //std::cout << "Server responded: " << call->reply.message() << std::endl;
+                std::cout << "Event sent OK" << std::endl;
             else
                 std::cout << "RPC failed" << std::endl;
 
