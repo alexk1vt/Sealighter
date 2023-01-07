@@ -475,7 +475,7 @@ void setup_logger_rpc
 
     // Spawn reader thread that loops indefinitely
     Sender->setThreadStatus(true);
-    Sender->thread_ = std::thread(&SenderClient::AsyncCompleteRpc, &Sender); //I BELIVE THE ERROR IS THE REFERENCE TO THE SECOND PARAMETER -- WHAT SHOULD SENDER BE
+    Sender->thread_ = std::thread(&SenderClient::AsyncCompleteRpc, Sender);
 
     return;
 }
