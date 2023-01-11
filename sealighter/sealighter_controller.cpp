@@ -451,7 +451,8 @@ int add_filters
                 top_list.emplace_back(std::shared_ptr<sealighter_none_of>(new sealighter_none_of(list)));
             }
         }
-
+        
+        log_messageA("Press control-c to quit\n");
         // Add top level list to a filter
         if (ERROR_SUCCESS == status) {
             sealighter_all_of top_pred = sealighter_all_of(top_list);

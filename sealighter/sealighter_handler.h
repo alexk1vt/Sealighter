@@ -185,7 +185,8 @@ public:
 
     // Loop while listening for completed responses.
     // Prints out the response from the server.
-    void AsyncCompleteRpc() {
+    void AsyncCompleteRpc
+    () {
         void* got_tag;
         bool ok = false;
 
@@ -198,10 +199,12 @@ public:
             // corresponds solely to the request for updates introduced by Finish().
             GPR_ASSERT(ok);
 
-            if (call->status.ok())
-                //std::cout << "Server responded: " << call->reply.message() << std::endl;
-                std::cout << "Event sent OK" << std::endl;
+            /*if (call->status.ok())
+                std::cout << "Server responded: " << call->reply.message() << std::endl
             else
+                std::cout << "RPC failed" << std::endl;*/
+
+            if (!call->status.ok())
                 std::cout << "RPC failed" << std::endl;
 
             // Once we're complete, deallocate the call object.

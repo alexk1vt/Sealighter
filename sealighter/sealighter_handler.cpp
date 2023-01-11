@@ -116,14 +116,17 @@ void threaded_write_file_ln
 
 /*
     Print a line to an output rpc
+    Using lock to see if that prevents logjam on 60meg file output
 */
 void write_rpc_ln
 (
     std::string event_string
 )
 {
+    g_print_mutex.lock();
     //line to do the actual write to rpc
     Sender->SendString(event_string);
+    g_print_mutex.unlock();
 }
 
 /*
@@ -461,6 +464,10 @@ void teardown_logger_file()
     if (g_outfile.is_open()) {
         g_outfile.close();
     }
+    else if (Output_format::output_rpc == g_output_format) {
+        std::cout << "Tearing down RPC\n";
+        teardown_logger_rpc();
+    }
 }
 
 // Receives string containing config to access server channel.  Ex:
@@ -470,6 +477,7 @@ void setup_logger_rpc
     std::string rpc_target
 )
 {
+    std::cout << "Sending events via gRPC to: " << rpc_target << std::endl;
     Sender = new SenderClient(grpc::CreateChannel(rpc_target.c_str(),
         grpc::InsecureChannelCredentials()));
 
