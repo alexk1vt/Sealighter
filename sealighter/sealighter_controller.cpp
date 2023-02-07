@@ -43,6 +43,7 @@ void add_filter_to_vector_property_compare_item
     std::vector<std::shared_ptr<predicates::details::predicate_base>>& list
 )
 {
+    //log_messageA("**Adding filter compare item >>  Name: %s\ Value: %s Type: %s\n", convert_json_string(item["name"], false).c_str(), convert_json_string(item["value"], false).c_str(), convert_json_string(item["type"], false).c_str());
     if (!item["name"].is_null() && !item["value"].is_null() && !item["type"].is_null()) {
         std::wstring name = convert_str_wstr(item["name"].get<std::string>());
         std::string type = item["type"].get<std::string>();
@@ -119,9 +120,10 @@ void add_filter_to_vector_property_compare
 {
     std::vector<std::shared_ptr<predicates::details::predicate_base>> list;
     if (!root[element].is_null()) {
-        log_messageA("        %s: %s\n", element.c_str(), convert_json_string(root[element], false).c_str());
+        log_messageA("        %s: %s\n", element.c_str(), convert_json_string(root[element], true).c_str());
         if (root[element].is_array()) {
             for (json item : root[element]) {
+                //log_messageA("  JSON item is Array!\n  element: %s\n  root[element]: %s\n  item: %s\n\n", element.c_str(), convert_json_string(root[element], true).c_str(), convert_json_string(item, true).c_str());
                 add_filter_to_vector_property_compare_item<ComparerA, ComparerW>(item, list);
             }
             if (!list.empty()) {
@@ -129,6 +131,7 @@ void add_filter_to_vector_property_compare
             }
         }
         else {
+            //log_messageA("  JSON item is NOT array!\n  element: %s\n  root[element]: %s\n\n", element.c_str(), convert_json_string(root[element], true).c_str());
             add_filter_to_vector_property_compare_item<ComparerA, ComparerW>(root[element], pred_vector);
         }
     }
