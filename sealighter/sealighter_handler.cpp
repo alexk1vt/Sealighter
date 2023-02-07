@@ -37,7 +37,7 @@ static std::condition_variable g_buffer_list_con_var;
 
 //for gRPC
 SenderClient* Sender;
-
+unsigned int grpc_cnt;
 // -------------------------
 // GLOBALS - END
 // -------------------------
@@ -124,6 +124,7 @@ void write_rpc_ln
 )
 {
     g_print_mutex.lock();
+    grpc_cnt++;
     //line to do the actual write to rpc
     Sender->SendString(event_string);
     g_print_mutex.unlock();
@@ -465,6 +466,7 @@ void teardown_logger_file()
         g_outfile.close();
     }
     else if (Output_format::output_rpc == g_output_format) {
+        std::cout << "Reported " << grpc_cnt << " RPC events\n";
         std::cout << "Tearing down RPC\n";
         teardown_logger_rpc();
     }
@@ -477,6 +479,7 @@ void setup_logger_rpc
     std::string rpc_target
 )
 {
+    grpc_cnt = 0;
     std::cout << "Sending events via gRPC to: " << rpc_target << std::endl;
     Sender = new SenderClient(grpc::CreateChannel(rpc_target.c_str(),
         grpc::InsecureChannelCredentials()));

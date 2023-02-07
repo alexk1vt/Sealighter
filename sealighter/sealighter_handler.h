@@ -205,7 +205,7 @@ public:
                 std::cout << "RPC failed" << std::endl;*/
 
             if (!call->status.ok())
-                std::cout << "RPC failed" << std::endl;
+                std::cout << "RPC send failure" << std::endl;
 
             // Once we're complete, deallocate the call object.
             delete call;
