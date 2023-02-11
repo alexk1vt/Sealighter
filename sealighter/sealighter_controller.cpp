@@ -864,6 +864,10 @@ int parse_config
                 auto timeout = json_props["buffering_timout_seconds"].get<std::uint32_t>();
                 set_buffer_lists_timeout(timeout);
             }
+
+            if (!json_props["report_ancestors"].is_null() && json_props["report_ancestors"].get<bool>()) {
+                set_ancestor_tracking(true);
+            }
         }
     }
     catch (const nlohmann::detail::exception& e) {

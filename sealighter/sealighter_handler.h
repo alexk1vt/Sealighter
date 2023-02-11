@@ -136,6 +136,21 @@ void set_output_format
     Output_format format
 );
 
+/*
+    Stores the indicator to track process ancestors
+    May not work well for buffered events
+*/
+void set_ancestor_tracking
+(
+    bool set
+);
+
+bool get_process_ancestors
+(
+    DWORD curr_pid,
+    json* json_ancestors
+);
+
 void add_buffered_list
 (
     std::string trace_name,

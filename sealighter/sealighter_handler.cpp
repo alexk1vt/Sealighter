@@ -8,6 +8,9 @@
 #include <mutex>
 #include <atomic>
 
+#include <TlHelp32.h> // to collect process info
+#include <unordered_map> // for temp storage of process snapshot for repeated look ups
+
 
 
 
@@ -35,9 +38,14 @@ static std::thread g_buffer_list_thread;
 static std::atomic_bool g_buffer_thread_stop = false;
 static std::condition_variable g_buffer_list_con_var;
 
-//for gRPC
+// for gRPC
 SenderClient* Sender;
 unsigned int grpc_cnt;
+
+// Indicate whether to collect ancestor process data
+// Doesn't work for buffered events
+static bool g_ancestor_tracking;
+
 // -------------------------
 // GLOBALS - END
 // -------------------------
@@ -128,6 +136,87 @@ void write_rpc_ln
     //line to do the actual write to rpc
     Sender->SendString(event_string);
     g_print_mutex.unlock();
+}
+
+/*
+    Get a process image file name, full path, and parent process ID
+    Returns true if success, false otherwise
+    Basing code off:  https://cocomelonc.github.io/pentest/2021/09/29/findmyprocess.html
+    MS reference:  https://learn.microsoft.com/en-us/windows/win32/toolhelp/taking-a-snapshot-and-viewing-processes
+    MS reference:  https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/ns-tlhelp32-processentry32
+*/
+bool get_process_ancestors
+(
+    DWORD curr_pid,
+    json* json_ancestors
+)
+{
+    HANDLE snapshot_handle = NULL;
+    HANDLE module_handle = NULL;
+    PROCESSENTRY32 proc_entry;
+    MODULEENTRY32 mod_entry;
+    DWORD p_pid;
+    bool handle_result;
+    std::unordered_map<DWORD, PROCESSENTRY32W> proc_map;
+    std::unordered_map<DWORD, PROCESSENTRY32W>::const_iterator it;
+    std::wstring ancestor_string;
+
+    std::cout << "Getting ancestor info for process: " << std::to_string(curr_pid).c_str() << std::endl;
+
+    // initializing sizes needed for Process32First(...) and Module32First(...)
+    proc_entry.dwSize = sizeof(PROCESSENTRY32);
+    mod_entry.dwSize = sizeof(MODULEENTRY32);
+
+    // collect snapshot of all running processes in the system
+    snapshot_handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0); // FLAGS:  includes all processes in the system as well as all module info
+    if (INVALID_HANDLE_VALUE == snapshot_handle) return false;
+
+    // get info on first process in snapshot
+    
+    handle_result = Process32First(snapshot_handle, &proc_entry);
+
+    // this could take quite a lot of time if we loop through all processes every time we look up an ancestor...
+    // can I iterate through list once and build a tree?  or quick hash table?
+    // hash table with PID as key and PROCESSENTRY32 pointer as value?
+
+    // populate unordered map linking PIDs to process entry pointers
+    while (handle_result) {
+        proc_map[proc_entry.th32ProcessID] = proc_entry;
+        handle_result = Process32Next(snapshot_handle, &proc_entry);
+    }
+
+    // now loop to build json_ancestors array
+    while (curr_pid > 4) { //4 is the PID of system process
+        //recall process identifyer of curr_PID
+        it = proc_map.find(curr_pid);
+        if (it == proc_map.end())
+            return false; //not able to find the PID in question in the process map
+        proc_entry = it->second;
+
+        //get parent PID p_pid
+        p_pid = proc_entry.th32ParentProcessID;
+        std::cout << "Parent process PID: " << p_pid << std::endl;
+        
+        //get module identifier of parent process
+        module_handle = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, p_pid);
+        if (INVALID_HANDLE_VALUE == module_handle) break;
+
+        // get image file and path on first module in process
+        if (!Module32First(snapshot_handle, &mod_entry)) break;
+        ancestor_string = proc_entry.szExeFile;
+        std::cout << "Parent process image file and path: " << ancestor_string.c_str() << std::endl;
+
+        //push parent image name and path to json array 
+        json_ancestors->push_back(ancestor_string);
+
+        //jump current PID to parent and start loop over
+        curr_pid = p_pid;
+    }
+
+    // Done.  Close handles and return
+    CloseHandle(snapshot_handle);
+    if (module_handle) CloseHandle(module_handle);
+    return true;
 }
 
 /*
@@ -333,6 +422,20 @@ json parse_event_to_json
         }
     }
 
+    // Check if we're meant to collect process ancestor data
+    // Note:  there's a chance that by the time OS is queried for process info, they are no longer running
+    if (g_ancestor_tracking) {
+        json json_ancestors = json::array();
+        //need to get process in question PID - in the event header as process_id
+        unsigned int curr_pid = schema.process_id();
+
+        if (get_process_ancestors(curr_pid, &json_ancestors))
+            json_event["process_ancestors"] = json_ancestors;
+        
+
+        
+    }
+
     return json_event;
 }
 
@@ -503,6 +606,10 @@ void set_output_format(Output_format format)
     g_output_format = format;
 }
 
+void set_ancestor_tracking(bool set)
+{
+    g_ancestor_tracking = set;
+}
 
 void add_buffered_list
 (
