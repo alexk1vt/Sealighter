@@ -170,7 +170,6 @@ bool get_process_ancestors
     HANDLE module_handle = NULL;
     PROCESSENTRY32 proc_entry;
     MODULEENTRY32 mod_entry;
-    DWORD p_pid;
     bool handle_result;
     std::unordered_map<DWORD, PROCESSENTRY32W> proc_map;
     std::unordered_map<DWORD, PROCESSENTRY32W>::const_iterator iter;
@@ -207,16 +206,12 @@ bool get_process_ancestors
         //recall process identifyer of curr_PID
         iter = proc_map.find(curr_pid);
         if (iter == proc_map.end()) {
-            std::cout << "PID " << std::to_string(curr_pid).c_str() << " not found in process snapshot" << std::endl;
             break; //not able to find the PID in question in the process map so cannot proceed furtehr
         }
         proc_entry = iter->second;
-
-        //get parent PID p_pid
-        p_pid = proc_entry.th32ParentProcessID;
-        
+    
         //get module identifier of parent process
-        module_handle = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, p_pid);
+        module_handle = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, curr_pid);
         // Note - parent may not be running when second snapshot is taken
         if (INVALID_HANDLE_VALUE == module_handle) {
             mod_load_status = false;
@@ -235,14 +230,14 @@ bool get_process_ancestors
             p_string.assign(proc_entry.szExeFile); // couldn't load module so use executable name collected during process capture
         }
 
-        ancestor_string.assign(ws2s(p_string)); //convert wstring p_string to avoid string shenanigans
-        std::cout << "Parent process: " << std::to_string(p_pid).c_str() << " has executable: " << ancestor_string.c_str() << std::endl;
+        ancestor_string.assign(ws2s(p_string)); //convert wstring p_string to normal string to avoid shenanigans
+        //std::cout << "Process PID: " << std::to_string(curr_pid).c_str() << " has executable: " << ancestor_string.c_str() << std::endl;
 
         //push parent image name and path to json array 
         json_ancestors->push_back(ancestor_string);
 
-        //jump current PID to parent and start loop over
-        curr_pid = p_pid;
+        //get parent PID p_pid and set as current PID
+        curr_pid = proc_entry.th32ParentProcessID;
     }
 
     // Done.  Close handles and return

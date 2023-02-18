@@ -9,6 +9,9 @@
 #include "sealighter_handler.h"
 #include "sealighter_provider.h"
 
+#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING 1 // silences error for using deprecated library  
+#include <experimental/filesystem> // for directory walking - have to use deprecated experimental version because sealighter is c++ 14 (filesystem needs c++ 17)
+
 // -------------------------
 // GLOBALS - START
 // -------------------------
@@ -17,6 +20,7 @@
 namespace kpc = krabs::predicates::comparers;
 namespace kpa = krabs::predicates::adapters;
 
+namespace fs = std::experimental::filesystem;
 
 // Holds a KrabsETW User Session Trace if needed
 static user_trace* g_user_session = NULL;
@@ -29,6 +33,87 @@ static kernel_trace* g_kernel_session = NULL;
 // -------------------------
 // PRIVATE FUNCTIONS - START
 // -------------------------
+
+/*
+    Recursive search for files in given path with specified extension
+    By specifying a file extension and target path, this populates a string vector with all files
+    that end with the given file extension, including matching files in sub-directories of target path
+*/
+
+void rfind_files_at_location
+(
+    const std::string path,
+    const std::string search_ext,
+    std::vector<std::string>& file_list
+)
+{
+    std::string root_path;
+    std::string ext_delim(".");
+    std::string file_delim("\\");
+    std::string path_string;
+    std::string extension;
+    size_t delim_pos;
+
+    unsigned int cnt = 0;
+    unsigned int sample_cnt = 0;
+    unsigned int loop_cnt = 0;
+    //const std::string path2("\\temp\\");
+
+    std::cout << "Lookig for ." << search_ext << " files in " << path << std::endl;
+    
+    // testing only
+    //std::error_code ec;
+    //fs::recursive_directory_iterator dirIter(path);
+    ////fs::recursive_directory_iterator dirBegin = fs::begin(dirIter);
+    //fs::recursive_directory_iterator dirEnd = fs::end(dirIter);
+    //if (dirIter == dirEnd) {
+    //    std::cout << "dirIter == dirEnd immediately!" << std::endl;
+    //}
+
+    //for (dirIter; dirIter != dirEnd; dirIter++) {
+    //    std::cout << dirIter->path().string() << std::endl;
+    //}
+    // std::cout << "Loop finished with error code: " << ec << std::endl;
+    // end testing
+
+    //for (auto& dirEntry : fs::recursive_directory_iterator(path)) {
+    for (fs::directory_entry dirEntry : fs::recursive_directory_iterator(path)) {
+        loop_cnt++;
+        if (!(dirEntry.status().type() == fs::file_type::directory)) {
+            //check file extension
+            path_string.assign(dirEntry.path().string());
+            delim_pos = path_string.rfind(ext_delim);
+            if (delim_pos == std::string::npos)
+                continue; //couldn't find file extension
+            extension.assign(path_string.substr(delim_pos + ext_delim.length()));
+            if (!extension.compare(search_ext)) { //check to see if this is file with extension search_ext - gives 0 when matches
+                delim_pos = path_string.rfind(file_delim);
+                if (delim_pos == std::string::npos)
+                    continue; //couldn't find file name
+                file_list.push_back(path_string.substr(delim_pos + file_delim.length()));
+                cnt++;
+            }
+        }
+    }
+    log_messageA("%s files added to string vector\n", std::to_string(cnt));
+    std::cout << "Loop count: " << std::to_string(loop_cnt) << std::endl;
+}
+
+void fake_rfind(std::string path) {
+    std::cout << "Start fake_rfind()\n" << "  Searching for any files in " << path << std::endl;
+    unsigned int loop_cnt = 0;
+    unsigned int file_cnt = 0;
+
+    for (fs::directory_entry dirEntry : fs::recursive_directory_iterator(path)) {
+        loop_cnt++;
+        if (fs::is_regular_file(dirEntry.path())) {
+            //std::cout << dirEntry.path().string() << std::endl;
+            file_cnt++;
+        }
+    }
+    std::cout << path << ": loop count: " << std::to_string(loop_cnt) << " | file count: " << std::to_string(file_cnt) << std::endl;
+    std::cout << "End fake_rfind()\n";
+}
 
 /*
     Adds a single property comparer filter to a list
@@ -417,7 +502,8 @@ int add_filters
     if (json_provider["filters"].is_null() ||
         (json_provider["filters"]["any_of"].is_null() &&
          json_provider["filters"]["all_of"].is_null() &&
-         json_provider["filters"]["none_of"].is_null()
+         json_provider["filters"]["none_of"].is_null() &&
+          json_provider["filters"]["special"].is_null()
         )
        ) {
         // No filters, log everything
@@ -429,33 +515,109 @@ int add_filters
     else {
         // Build top-level list
         // All 3 options will eventually be ANDed together
+
+        // First check for special programmatic filters -- this excludes use of standard filters for given trace
         std::vector<std::shared_ptr<predicates::details::predicate_base>> top_list;
-        if (!json_provider["filters"]["any_of"].is_null()) {
-            log_messageA("    Filtering any of:\n");
-            std::vector<std::shared_ptr<predicates::details::predicate_base>> list;
-            status = add_filters_to_vector(list, json_provider["filters"]["any_of"]);
-            if (ERROR_SUCCESS == status) {
-                top_list.emplace_back(std::shared_ptr<sealighter_any_of>(new sealighter_any_of(list)));
+        if (ERROR_SUCCESS == status && !json_provider["filters"]["special"].is_null()) {
+            // Special filters will be handled seperately than standard filters and cannot be combined
+            log_messageA("    Special filtering of:\n");
+            // Implement programmatic instances of standard any/all/none filters
+            if (!json_provider["filters"]["special"]["dupl_files_outside_location"].is_null()){
+                json json_spec_filters = json_provider["filters"]["special"]["dupl_files_outside_location"];
+                log_messageA("      Duplicate files outside of location:\n%s\n", convert_json_string(json_spec_filters, true).c_str());
+                //iterate through list of target file extensions, adding discovered files to filter vector each time through loop
+                std::string search_path(json_spec_filters["location_contains"].get<std::string>());
+                std::string filter_field_name(json_spec_filters["name"].get<std::string>());
+                std::string filter_value_type(json_spec_filters["type"].get<std::string>());
+                    
+                if (!json_spec_filters["extensions"].is_array()) {
+                    log_messageA("File extensions for duplicate files special filter must be specified within a list -- no filtering applied.\n");
+                    pNew_provider->add_on_event_callback([sealighter_context](const EVENT_RECORD& record, const krabs::trace_context& trace_context) {
+                    handle_event_context(record, trace_context, sealighter_context);
+                    });
+                    return status;
+                }
+
+                std::vector<std::string> file_list;
+                for (auto iter : json_spec_filters["extensions"]) { // work through list of file extensions to search for
+                    rfind_files_at_location(search_path, iter.get<std::string>(), file_list);
+                }
+                log_messageA("Adding %s files to filter\n", std::to_string(file_list.size()));
+
+                //now generate filter vectors
+
+                //any_of
+                std::vector<std::shared_ptr<predicates::details::predicate_base>> any_list;
+                json json_any_of_filter;
+                json_any_of_filter["property_iends_with"] = json::array(); //create empty array in preparation for pushing
+                for (std::vector<std::string>::iterator iter = file_list.begin(); iter != file_list.end(); iter++) {
+                    json_any_of_filter["property_iends_with"].push_back({
+                        {"name", filter_field_name},
+                        {"value", *iter},
+                        {"type", filter_value_type}
+                    });
+                }
+                status = add_filters_to_vector(any_list, json_any_of_filter);
+                if (ERROR_SUCCESS == status) {
+                    top_list.emplace_back(std::shared_ptr<sealighter_any_of>(new sealighter_any_of(any_list)));
+                }
+
+                //none_of
+                if (!json_spec_filters["acceptable_locations"].is_array())
+                {
+                    log_messageA("Acceptable locations for duplicate files special filter must be specified within a list -- no filtering applied.\n");
+                    pNew_provider->add_on_event_callback([sealighter_context](const EVENT_RECORD& record, const krabs::trace_context& trace_context) {
+                        handle_event_context(record, trace_context, sealighter_context);
+                        });
+                    return status;
+                }
+
+                std::vector<std::shared_ptr<predicates::details::predicate_base>> none_list;
+                json json_none_of_filter;
+                json_none_of_filter["property_icontains"] = json::array();
+                for (auto iter : json_spec_filters["acceptable_locations"]) {
+                    json_none_of_filter["property_icontains"].push_back({
+                        {"name", filter_field_name},
+                        {"value", iter.get<std::string>()},
+                        {"type", filter_value_type}
+                    });
+                }
+                status = add_filters_to_vector(none_list, json_none_of_filter);
+                if (ERROR_SUCCESS == status) {
+                    top_list.emplace_back(std::shared_ptr<sealighter_none_of>(new sealighter_none_of(none_list)));
+                }
+            }
+            else {
+                log_messageA("  json_spec_filters['dupl_files_outside_location'] is NULL!\n");
             }
         }
-        if (ERROR_SUCCESS == status && !json_provider["filters"]["all_of"].is_null()) {
-            log_messageA("    Filtering all of:\n");
-            std::vector<std::shared_ptr<predicates::details::predicate_base>> list;
-            status = add_filters_to_vector(list, json_provider["filters"]["all_of"]);
-            if (ERROR_SUCCESS == status) {
-                top_list.emplace_back(std::shared_ptr<sealighter_all_of>(new sealighter_all_of(list)));
+        else {  //standard filter building
+            if (!json_provider["filters"]["any_of"].is_null()) {
+                log_messageA("    Filtering any of:\n");
+                std::vector<std::shared_ptr<predicates::details::predicate_base>> list;
+                status = add_filters_to_vector(list, json_provider["filters"]["any_of"]);
+                if (ERROR_SUCCESS == status) {
+                    top_list.emplace_back(std::shared_ptr<sealighter_any_of>(new sealighter_any_of(list)));
+                }
             }
-        }
-        if (ERROR_SUCCESS == status && !json_provider["filters"]["none_of"].is_null()) {
-            log_messageA("    Filtering none of:\n");
-            std::vector<std::shared_ptr<predicates::details::predicate_base>> list;
-            status = add_filters_to_vector(list, json_provider["filters"]["none_of"]);
-            if (ERROR_SUCCESS == status) {
-                top_list.emplace_back(std::shared_ptr<sealighter_none_of>(new sealighter_none_of(list)));
+            if (ERROR_SUCCESS == status && !json_provider["filters"]["all_of"].is_null()) {
+                log_messageA("    Filtering all of:\n");
+                std::vector<std::shared_ptr<predicates::details::predicate_base>> list;
+                status = add_filters_to_vector(list, json_provider["filters"]["all_of"]);
+                if (ERROR_SUCCESS == status) {
+                    top_list.emplace_back(std::shared_ptr<sealighter_all_of>(new sealighter_all_of(list)));
+                }
+            }
+            if (ERROR_SUCCESS == status && !json_provider["filters"]["none_of"].is_null()) {
+                log_messageA("    Filtering none of:\n");
+                std::vector<std::shared_ptr<predicates::details::predicate_base>> list;
+                status = add_filters_to_vector(list, json_provider["filters"]["none_of"]);
+                if (ERROR_SUCCESS == status) {
+                    top_list.emplace_back(std::shared_ptr<sealighter_none_of>(new sealighter_none_of(list)));
+                }
             }
         }
         
-        log_messageA("Press control-c to quit\n");
         // Add top level list to a filter
         if (ERROR_SUCCESS == status) {
             sealighter_all_of top_pred = sealighter_all_of(top_list);
@@ -989,6 +1151,7 @@ int run_sealighter
         return SEALIGHTER_ERROR_NO_SESSION_CREATED;
     }
     else {
+        log_messageA("Press control-c to quit\n");
         // Setup Buffering thread if needed
         start_bufferring();
 
