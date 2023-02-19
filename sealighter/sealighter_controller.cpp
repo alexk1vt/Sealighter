@@ -55,30 +55,12 @@ void rfind_files_at_location
     size_t delim_pos;
 
     unsigned int cnt = 0;
+    unsigned int skip_cnt = 0;
     unsigned int sample_cnt = 0;
-    unsigned int loop_cnt = 0;
-    //const std::string path2("\\temp\\");
 
     std::cout << "Lookig for ." << search_ext << " files in " << path << std::endl;
     
-    // testing only
-    //std::error_code ec;
-    //fs::recursive_directory_iterator dirIter(path);
-    ////fs::recursive_directory_iterator dirBegin = fs::begin(dirIter);
-    //fs::recursive_directory_iterator dirEnd = fs::end(dirIter);
-    //if (dirIter == dirEnd) {
-    //    std::cout << "dirIter == dirEnd immediately!" << std::endl;
-    //}
-
-    //for (dirIter; dirIter != dirEnd; dirIter++) {
-    //    std::cout << dirIter->path().string() << std::endl;
-    //}
-    // std::cout << "Loop finished with error code: " << ec << std::endl;
-    // end testing
-
-    //for (auto& dirEntry : fs::recursive_directory_iterator(path)) {
     for (fs::directory_entry dirEntry : fs::recursive_directory_iterator(path)) {
-        loop_cnt++;
         if (!(dirEntry.status().type() == fs::file_type::directory)) {
             //check file extension
             path_string.assign(dirEntry.path().string());
@@ -90,13 +72,23 @@ void rfind_files_at_location
                 delim_pos = path_string.rfind(file_delim);
                 if (delim_pos == std::string::npos)
                     continue; //couldn't find file name
-                file_list.push_back(path_string.substr(delim_pos + file_delim.length()));
-                cnt++;
+                std::string file_name(path_string.substr(delim_pos + file_delim.length()));
+                // check if string is already in list - if not, add it
+                bool found = std::any_of(file_list.begin(), file_list.end(), [&file_name](const std::string& s) 
+                    {return file_name.find(s) != std::string::npos;}
+                );
+                if (!found) {
+                    file_list.push_back(file_name);
+                    cnt++;
+                }
+                else {
+                    skip_cnt++;
+                }
             }
         }
     }
+    log_messageA("%s duplicate files skipped\n", std::to_string(skip_cnt));
     log_messageA("%s files added to string vector\n", std::to_string(cnt));
-    std::cout << "Loop count: " << std::to_string(loop_cnt) << std::endl;
 }
 
 void fake_rfind(std::string path) {
@@ -525,22 +517,24 @@ int add_filters
             if (!json_provider["filters"]["special"]["dupl_files_outside_location"].is_null()){
                 json json_spec_filters = json_provider["filters"]["special"]["dupl_files_outside_location"];
                 log_messageA("      Duplicate files outside of location:\n%s\n", convert_json_string(json_spec_filters, true).c_str());
-                //iterate through list of target file extensions, adding discovered files to filter vector each time through loop
-                std::string search_path(json_spec_filters["location_contains"].get<std::string>());
-                std::string filter_field_name(json_spec_filters["name"].get<std::string>());
-                std::string filter_value_type(json_spec_filters["type"].get<std::string>());
-                    
-                if (!json_spec_filters["extensions"].is_array()) {
-                    log_messageA("File extensions for duplicate files special filter must be specified within a list -- no filtering applied.\n");
+                //iterate through list of target file extensions and locations, adding discovered files to filter vector each time through loop
+                if (!json_spec_filters["extensions"].is_array() || !json_spec_filters["location_starts_with"].is_array()) {
+                    log_messageA("File extensions and locations for duplicate files special filter must be specified within a list -- no filtering applied.\n");
                     pNew_provider->add_on_event_callback([sealighter_context](const EVENT_RECORD& record, const krabs::trace_context& trace_context) {
-                    handle_event_context(record, trace_context, sealighter_context);
-                    });
+                        handle_event_context(record, trace_context, sealighter_context);
+                        });
                     return status;
                 }
-
+                
+                std::string filter_field_name(json_spec_filters["name"].get<std::string>());
+                std::string filter_value_type(json_spec_filters["type"].get<std::string>());
                 std::vector<std::string> file_list;
-                for (auto iter : json_spec_filters["extensions"]) { // work through list of file extensions to search for
-                    rfind_files_at_location(search_path, iter.get<std::string>(), file_list);
+
+                for (auto loc_iter : json_spec_filters["location_starts_with"])
+                {
+                    for (auto ext_iter : json_spec_filters["extensions"]) { // work through list of file extensions to search for
+                        rfind_files_at_location(loc_iter.get<std::string>(), ext_iter.get<std::string>(), file_list);
+                    }
                 }
                 log_messageA("Adding %s files to filter\n", std::to_string(file_list.size()));
 
@@ -586,14 +580,17 @@ int add_filters
                 if (ERROR_SUCCESS == status) {
                     top_list.emplace_back(std::shared_ptr<sealighter_none_of>(new sealighter_none_of(none_list)));
 
+                    
                     // Now add Post-Processing Filter (PPF)
                     // now add dupl_files_outside_location filter to post-processing filters (krabs still returns some events that should have been filtered out)
-                    std::vector<std::string> accept_location_list;
-                    for (auto iter : json_spec_filters["acceptable_locations"]) {
-                        accept_location_list.push_back(iter.get<std::string>());
+                    if (false){ // TODO:  Add global variable to check if we're doing PPF
+                        std::vector<std::string> accept_location_list;
+                        for (auto iter : json_spec_filters["acceptable_locations"]) {
+                            accept_location_list.push_back(iter.get<std::string>());
+                        }
+                        std::string trace_name = json_provider["trace_name"].get<std::string>();
+                        add_ppf_to_list(trace_name, filter_field_name, accept_location_list);
                     }
-                    std::string trace_name = json_provider["trace_name"].get<std::string>();
-                    add_ppf_to_list(trace_name, filter_field_name, accept_location_list);
                 }
             }
             else {

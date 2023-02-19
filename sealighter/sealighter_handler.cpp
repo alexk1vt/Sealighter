@@ -523,29 +523,31 @@ void handle_event_context
     json_event = parse_event_to_json(record, trace_context, sealighter_context, schema);
 
     // First check if event has post-processing filter
-    if (!json_event["header"]["trace_name"].is_null()) {
-        std::string trace_name = json_event["header"]["trace_name"].get<std::string>();
-        if (g_ppf_list.find(trace_name) != g_ppf_list.end()) {
-            // This is a trace that has a post-processing filter - check field in question for unwanted values
-            auto ppf_list_elem = g_ppf_list.find(trace_name);
-            std::string field_name = ppf_list_elem->second.field_name;
-            std::vector<std::string> unwanted_value_vec = ppf_list_elem->second.field_values;
-            
-            if (!json_event["properties"][field_name].is_null()) {  // check to make sure we have the right field name
-                std::string event_val = json_event["properties"][field_name].get<std::string>();
-                
-                //using std::any_of() to check for presence of any elements in unwanted_value_vec within event_val string
-                bool found = std::any_of(unwanted_value_vec.begin(), unwanted_value_vec.end(), 
-                    [&event_val](const auto& s) {return event_val.find(s) != std::string::npos;
-                    });
-                if (found) {
-                    // we don't want this event, so just ignore it
-                    std::cout << "Received unwanted event; skipping\n";
-                    return;
+    if (g_ppf_list.size() > 0) { // are there any filters in the PPF list?
+        if (!json_event["header"]["trace_name"].is_null()) {
+            std::string trace_name = json_event["header"]["trace_name"].get<std::string>();
+            if (g_ppf_list.find(trace_name) != g_ppf_list.end()) {
+                // This is a trace that has a post-processing filter - check field in question for unwanted values
+                auto ppf_list_elem = g_ppf_list.find(trace_name);
+                std::string field_name = ppf_list_elem->second.field_name;
+                std::vector<std::string> unwanted_value_vec = ppf_list_elem->second.field_values;
+
+                if (!json_event["properties"][field_name].is_null()) {  // check to make sure we have the right field name
+                    std::string event_val = json_event["properties"][field_name].get<std::string>();
+
+                    //using std::any_of() to check for presence of any elements in unwanted_value_vec within event_val string
+                    bool found = std::any_of(unwanted_value_vec.begin(), unwanted_value_vec.end(),
+                        [&event_val](const auto& s) {return event_val.find(s) != std::string::npos;
+                        });
+                    if (found) {
+                        // we don't want this event, so just ignore it
+                        std::cout << "Received unwanted event; skipping\n";
+                        return;
+                    }
                 }
-            }
-            else {
-                std::cout << "Incorrect field name for this trace's PPF\n";
+                else {
+                    std::cout << "Incorrect field name for this trace's PPF\n";
+                }
             }
         }
     }
