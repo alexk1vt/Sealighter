@@ -14,8 +14,6 @@
 #include <locale> // for conversion from wstring to string
 #include <codecvt> // for conversion from wstring to string
 
-
-
 // -------------------------
 // GLOBALS - START
 // -------------------------
@@ -46,6 +44,9 @@ unsigned int grpc_cnt;
 // Indicate whether to collect ancestor process data
 // Doesn't work for buffered events
 static bool g_ancestor_tracking;
+
+// holds any post-processing filters
+static std::unordered_map<std::string, ppf_properties_t> g_ppf_list;
 
 // -------------------------
 // GLOBALS - END
@@ -521,6 +522,34 @@ void handle_event_context
     std::string trace_name = sealighter_context->trace_name;
     json_event = parse_event_to_json(record, trace_context, sealighter_context, schema);
 
+    // First check if event has post-processing filter
+    if (!json_event["header"]["trace_name"].is_null()) {
+        std::string trace_name = json_event["header"]["trace_name"].get<std::string>();
+        if (g_ppf_list.find(trace_name) != g_ppf_list.end()) {
+            // This is a trace that has a post-processing filter - check field in question for unwanted values
+            auto ppf_list_elem = g_ppf_list.find(trace_name);
+            std::string field_name = ppf_list_elem->second.field_name;
+            std::vector<std::string> unwanted_value_vec = ppf_list_elem->second.field_values;
+            
+            if (!json_event["properties"][field_name].is_null()) {  // check to make sure we have the right field name
+                std::string event_val = json_event["properties"][field_name].get<std::string>();
+                
+                //using std::any_of() to check for presence of any elements in unwanted_value_vec within event_val string
+                bool found = std::any_of(unwanted_value_vec.begin(), unwanted_value_vec.end(), 
+                    [&event_val](const auto& s) {return event_val.find(s) != std::string::npos;
+                    });
+                if (found) {
+                    // we don't want this event, so just ignore it
+                    std::cout << "Received unwanted event; skipping\n";
+                    return;
+                }
+            }
+            else {
+                std::cout << "Incorrect field name for this trace's PPF\n";
+            }
+        }
+    }
+
     // Only care about event buffering if required
     if (g_buffer_lists.size() > 0 && g_buffer_lists.find(trace_name) != g_buffer_lists.end()) {
         // Lock Mutex for safety
@@ -717,4 +746,35 @@ void stop_bufferring()
         g_buffer_list_con_var.notify_one();
         g_buffer_list_thread.join();
     }
+}
+
+void print_ppf(ppf_properties_t ppf)
+{
+    std::cout << "{\n  " << ppf.field_name << ",\n";
+    std::vector<std::string>::iterator iter = ppf.field_values.begin();
+    std::cout << "  <" << *iter;
+    iter++;
+    for (; iter != ppf.field_values.end(); iter++) {
+        std::cout << ", " << *iter;
+    }
+    std::cout << ">\n}\n";
+}
+
+// Adds given post-processing filter values to global ppf list
+void add_ppf_to_list(std::string trace_name, std::string field_name, std::vector<std::string> values_vec)
+{
+    //ppf_properties_t ppf_properties{ field_name, values_vec };
+    //g_ppf_list[trace_name] = ppf_properties;
+    g_ppf_list[trace_name] = { field_name, values_vec };
+
+    /*
+    // DEV:  print unordered map to confirm contents
+    std::cout << "Global list of post-processing filters:\n";
+    for (auto iter : g_ppf_list) {
+        std::cout << "[" << iter.first << "]: ";
+        print_ppf(iter.second);
+        std::cout << std::endl;
+    }
+    */
+    return;
 }

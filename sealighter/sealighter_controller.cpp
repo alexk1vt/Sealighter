@@ -205,7 +205,7 @@ void add_filter_to_vector_property_compare
 {
     std::vector<std::shared_ptr<predicates::details::predicate_base>> list;
     if (!root[element].is_null()) {
-        log_messageA("        %s: %s\n", element.c_str(), convert_json_string(root[element], true).c_str());
+        //log_messageA("        %s: %s\n", element.c_str(), convert_json_string(root[element], true).c_str());
         if (root[element].is_array()) {
             for (json item : root[element]) {
                 //log_messageA("  JSON item is Array!\n  element: %s\n  root[element]: %s\n  item: %s\n\n", element.c_str(), convert_json_string(root[element], true).c_str(), convert_json_string(item, true).c_str());
@@ -585,6 +585,15 @@ int add_filters
                 status = add_filters_to_vector(none_list, json_none_of_filter);
                 if (ERROR_SUCCESS == status) {
                     top_list.emplace_back(std::shared_ptr<sealighter_none_of>(new sealighter_none_of(none_list)));
+
+                    // Now add Post-Processing Filter (PPF)
+                    // now add dupl_files_outside_location filter to post-processing filters (krabs still returns some events that should have been filtered out)
+                    std::vector<std::string> accept_location_list;
+                    for (auto iter : json_spec_filters["acceptable_locations"]) {
+                        accept_location_list.push_back(iter.get<std::string>());
+                    }
+                    std::string trace_name = json_provider["trace_name"].get<std::string>();
+                    add_ppf_to_list(trace_name, filter_field_name, accept_location_list);
                 }
             }
             else {

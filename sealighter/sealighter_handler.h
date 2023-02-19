@@ -63,6 +63,24 @@ struct sealighter_context_t {
     const bool dump_raw_event;
 };
 
+// Struct to hold properties for post-processing filters
+struct ppf_properties_t {
+    ppf_properties_t
+    (
+        std::string field_name_,
+        std::vector<std::string> field_values_
+    )
+        : field_name(field_name_)
+    {
+        field_values = field_values_;
+    }
+    ppf_properties_t()  //Need default constructor for the initialization of g_ppf_list (starts with an empty struct)
+    {}
+
+    std::string field_name;
+    std::vector<std::string> field_values;
+};
+
 /*
     Parse incoming events into JSON and output
 */
@@ -165,6 +183,18 @@ void set_buffer_lists_timeout
 void start_bufferring();
 
 void stop_bufferring();
+
+void print_ppf
+(
+    ppf_properties_t ppf
+);
+
+void add_ppf_to_list
+(
+    std::string trace_name,
+    std::string field_name,
+    std::vector<std::string> values_vec
+);
 
 //gRPC class
 class SenderClient {
